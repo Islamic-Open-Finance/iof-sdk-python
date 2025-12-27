@@ -1,0 +1,7 @@
+# Islamic Open Finance Python SDK - Dependencies
+
+# HTTP client with async/sync support
+httpx>=0.24.0,<1.0.0
+
+# Typing extensions for Python 3.8+ compatibility
+typing-extensions>=4.5.0,<5.0.0
