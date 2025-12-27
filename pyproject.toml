@@ -8,15 +8,15 @@ version = "0.1.0"
 description = "Python SDK for the Islamic Open Finance platform API"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
-    { name = "Islamic Open Finance", email = "support@islamicopenfinance.com" }
+    { name = "Islamic Open Finance", email = "oss@islamicopenfinance.com" }
 ]
 keywords = ["islamic-finance", "fintech", "api", "sdk", "shariah"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
@@ -47,8 +47,8 @@ dev = [
 [project.urls]
 Homepage = "https://islamicopenfinance.com"
 Documentation = "https://docs.islamicopenfinance.com"
-Repository = "https://github.com/islamicopenfinance/iof-sdk-python"
-"Bug Tracker" = "https://github.com/islamicopenfinance/iof-sdk-python/issues"
+Repository = "https://github.com/Islamic-Open-Finance/iof-sdk-python"
+"Bug Tracker" = "https://github.com/Islamic-Open-Finance/iof-sdk-python/issues"
 
 [tool.setuptools]
 packages = ["iof_sdk", "iof_sdk.rails"]
