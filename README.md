@@ -2,6 +2,9 @@
 
 Official Python client library for the Islamic Open Finance (IOF) platform API.
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+
 ## Installation
 
 ```bash
