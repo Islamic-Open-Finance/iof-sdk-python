@@ -1,608 +1,335 @@
-"""
-HTTP client and main IOF SDK client.
+"""Main IOF SDK Client."""
 
-This module provides the core HTTP client functionality and the main
-IOFClient class that provides access to all rail APIs.
-"""
+from typing import Any
 
-import time
-from typing import Any, Dict, Optional, Union
-from urllib.parse import urlencode, urljoin
+from .base_client import BaseClient
 
-import httpx
+# Agent Rail
+from .rails.agent_rail import AgentRailClient
 
-from .exceptions import (
-    ConnectionError as IOFConnectionError,
-    TimeoutError as IOFTimeoutError,
-    create_api_error,
+# Core Rails
+from .rails.access_consent import AccessConsentRail
+from .rails.account_information import AccountInformationRail
+from .rails.aml import AmlRail
+from .rails.analytics import AnalyticsRail
+from .rails.cases import CasesRail
+from .rails.clearing import ClearingRail
+from .rails.compliance import ComplianceRail
+from .rails.consent import ConsentRail
+from .rails.contract_lifecycle import ContractLifecycleRail
+from .rails.contracts import ContractsRail
+from .rails.developer import DeveloperRail
+from .rails.disputes import DisputesRail
+from .rails.events import EventsRail
+from .rails.governance import GovernanceRail
+from .rails.jurisdictions import JurisdictionsRail
+from .rails.kyc import KycRail
+from .rails.legal import LegalRail
+from .rails.messages import MessagesRail
+from .rails.notifications import NotificationsRail
+from .rails.observability import ObservabilityRail
+from .rails.partners import PartnersRail
+from .rails.portfolio import PortfolioRail
+from .rails.reconciliation import ReconciliationRail
+from .rails.reporting import ReportingRail
+from .rails.risk import RiskRail
+from .rails.routing import RoutingRail
+from .rails.search import SearchRail
+from .rails.treasury import TreasuryRail
+from .rails.underwriting import UnderwritingRail
+from .rails.webhooks import WebhooksRail
+from .rails.zakat import ZakatRail
+
+# Islamic Contract Rails
+from .rails.diminishing_musharakah import DiminishingMusharakahRail
+from .rails.hawalah import HawalahRail
+from .rails.hibah import HibahRail
+from .rails.ibraa import IbraaRail
+from .rails.ijarah import IjarahRail
+from .rails.istisna import IstisnaRail
+from .rails.jualah import JualahRail
+from .rails.kafalah import KafalahRail
+from .rails.mudarabah import MudarabahRail
+from .rails.muqasah import MuqasahRail
+from .rails.murabaha import MurabahaRail
+from .rails.musharakah import MusharakahRail
+from .rails.qard import QardRail
+from .rails.rahnu import RahnuRail
+from .rails.salam import SalamRail
+from .rails.tabarru import TabarruRail
+from .rails.ujrah import UjrahRail
+from .rails.wadiah import WadiahRail
+from .rails.wakalah import WakalahRail
+
+# Specialized Domain Rails
+from .rails.debt import DebtRail
+from .rails.funds import FundsRail
+from .rails.fx import FxRail
+from .rails.omnichannel import OmnichannelRail
+from .rails.prudential import PrudentialRail
+from .rails.shariah import ShariahComplianceRail, ShariahGovernanceRail, ShariahRulesRail
+from .rails.sukuk import SukukRail
+from .rails.takaful import TakafulRail
+from .rails.trade_finance import TradeFinanceRail
+from .rails.waqf import QardHasanRail, SadaqahRail, WaqfRail
+
+# Platform Service Rails
+from .rails.platform import (
+    AuditRail,
+    BillingRail,
+    DashboardRail,
+    LiquidityRail,
+    MetadataRail,
+    PaymentsRail,
+    ProfitDistributionRail,
+    ReferenceDataRail,
+    WorkspacesRail,
 )
 
-
-class HttpClient:
-    """
-    HTTP client for making requests to the IOF API.
-
-    Handles authentication, retries, timeouts, and error handling.
-    """
-
-    def __init__(
-        self,
-        base_url: str,
-        api_key: Optional[str] = None,
-        access_token: Optional[str] = None,
-        tenant_id: Optional[str] = None,
-        timeout: float = 30.0,
-        max_retries: int = 3,
-    ) -> None:
-        """
-        Initialize the HTTP client.
-
-        Args:
-            base_url: Base URL of the IOF API
-            api_key: API key for authentication
-            access_token: Bearer token for authentication
-            tenant_id: Tenant ID for multi-tenancy
-            timeout: Request timeout in seconds
-            max_retries: Maximum number of retry attempts
-        """
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.max_retries = max_retries
-
-        # Build default headers
-        self.headers: Dict[str, str] = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-        if api_key:
-            self.headers["X-Api-Key"] = api_key
-
-        if access_token:
-            self.headers["Authorization"] = f"Bearer {access_token}"
-
-        if tenant_id:
-            self.headers["X-Tenant-Id"] = tenant_id
-
-        # Create httpx client
-        self.client = httpx.Client(
-            base_url=self.base_url,
-            headers=self.headers,
-            timeout=self.timeout,
-        )
-
-    def __enter__(self) -> "HttpClient":
-        """Context manager entry."""
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        """Context manager exit."""
-        self.close()
-
-    def close(self) -> None:
-        """Close the HTTP client."""
-        self.client.close()
-
-    def set_api_key(self, api_key: str) -> None:
-        """
-        Set the API key for authentication.
-
-        Args:
-            api_key: API key
-        """
-        self.headers["X-Api-Key"] = api_key
-        self.client.headers["X-Api-Key"] = api_key
-
-    def set_access_token(self, access_token: str) -> None:
-        """
-        Set the bearer token for authentication.
-
-        Args:
-            access_token: Bearer token
-        """
-        self.headers["Authorization"] = f"Bearer {access_token}"
-        self.client.headers["Authorization"] = f"Bearer {access_token}"
-
-    def set_tenant_id(self, tenant_id: str) -> None:
-        """
-        Set the tenant ID for multi-tenancy.
-
-        Args:
-            tenant_id: Tenant ID
-        """
-        self.headers["X-Tenant-Id"] = tenant_id
-        self.client.headers["X-Tenant-Id"] = tenant_id
-
-    def _build_url(
-        self, path: str, params: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Build full URL with query parameters.
-
-        Args:
-            path: URL path
-            params: Query parameters
-
-        Returns:
-            Full URL string
-        """
-        url = path if path.startswith("http") else urljoin(self.base_url, path)
-
-        if params:
-            # Filter out None values
-            filtered_params = {k: v for k, v in params.items() if v is not None}
-            if filtered_params:
-                query_string = urlencode(filtered_params, doseq=True)
-                url = f"{url}?{query_string}"
-
-        return url
-
-    def _make_request(
-        self,
-        method: str,
-        path: str,
-        params: Optional[Dict[str, Any]] = None,
-        json: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Any:
-        """
-        Make HTTP request with retry logic.
-
-        Args:
-            method: HTTP method
-            path: URL path
-            params: Query parameters
-            json: JSON body
-            headers: Additional headers
-
-        Returns:
-            Response data
-
-        Raises:
-            ApiError: If the API returns an error
-            TimeoutError: If the request times out
-            ConnectionError: If the connection fails
-        """
-        url = self._build_url(path, params)
-        request_headers = {**self.headers, **(headers or {})}
-
-        last_exception: Optional[Exception] = None
-
-        for attempt in range(self.max_retries):
-            try:
-                response = self.client.request(
-                    method=method,
-                    url=url,
-                    json=json,
-                    headers=request_headers,
-                )
-
-                # Handle successful responses
-                if response.status_code == 204:
-                    return None
-
-                if 200 <= response.status_code < 300:
-                    if response.content:
-                        return response.json()
-                    return None
-
-                # Handle error responses
-                try:
-                    error_data = response.json()
-                    error_message = error_data.get("error", {}).get(
-                        "message", response.text
-                    )
-                    error_code = error_data.get("error", {}).get("code")
-                    error_details = error_data.get("error", {}).get("details")
-                except Exception:
-                    error_message = response.text or response.reason_phrase
-                    error_code = None
-                    error_details = None
-
-                error = create_api_error(
-                    status_code=response.status_code,
-                    message=error_message,
-                    code=error_code,
-                    details=error_details,
-                )
-
-                # Don't retry client errors (4xx)
-                if 400 <= response.status_code < 500:
-                    raise error
-
-                last_exception = error
-
-            except httpx.TimeoutException as e:
-                last_exception = IOFTimeoutError(f"Request timeout: {str(e)}")
-            except httpx.NetworkError as e:
-                last_exception = IOFConnectionError(f"Connection failed: {str(e)}")
-            except httpx.HTTPStatusError as e:
-                last_exception = create_api_error(
-                    status_code=e.response.status_code,
-                    message=str(e),
-                )
-
-            # Wait before retrying with exponential backoff
-            if attempt < self.max_retries - 1:
-                wait_time = 2**attempt
-                time.sleep(wait_time)
-
-        # Raise the last exception if all retries failed
-        if last_exception:
-            raise last_exception
-
-        raise IOFConnectionError("Request failed after all retries")
-
-    def get(
-        self,
-        path: str,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Any:
-        """
-        Make GET request.
-
-        Args:
-            path: URL path
-            params: Query parameters
-            headers: Additional headers
-
-        Returns:
-            Response data
-        """
-        return self._make_request("GET", path, params=params, headers=headers)
-
-    def post(
-        self,
-        path: str,
-        json: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Any:
-        """
-        Make POST request.
-
-        Args:
-            path: URL path
-            json: JSON body
-            params: Query parameters
-            headers: Additional headers
-
-        Returns:
-            Response data
-        """
-        return self._make_request(
-            "POST", path, params=params, json=json, headers=headers
-        )
-
-    def put(
-        self,
-        path: str,
-        json: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Any:
-        """
-        Make PUT request.
-
-        Args:
-            path: URL path
-            json: JSON body
-            params: Query parameters
-            headers: Additional headers
-
-        Returns:
-            Response data
-        """
-        return self._make_request(
-            "PUT", path, params=params, json=json, headers=headers
-        )
-
-    def patch(
-        self,
-        path: str,
-        json: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Any:
-        """
-        Make PATCH request.
-
-        Args:
-            path: URL path
-            json: JSON body
-            params: Query parameters
-            headers: Additional headers
-
-        Returns:
-            Response data
-        """
-        return self._make_request(
-            "PATCH", path, params=params, json=json, headers=headers
-        )
-
-    def delete(
-        self,
-        path: str,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Any:
-        """
-        Make DELETE request.
-
-        Args:
-            path: URL path
-            params: Query parameters
-            headers: Additional headers
-
-        Returns:
-            Response data
-        """
-        return self._make_request("DELETE", path, params=params, headers=headers)
+# Additional Rails
+from .rails.alerting import AlertingRail
+from .rails.api_keys import ApiKeysRail
+from .rails.asset_finance import AssetFinanceRail
+from .rails.audit_analytics import AuditAnalyticsRail
+from .rails.byoc import BYOCRail
+from .rails.evidence_pack import EvidencePackRail
+from .rails.finops import FinOpsRail
+from .rails.gdpr import GDPRRail
+from .rails.invitations import InvitationsRail
+from .rails.islamic_microfinance import IslamicMicrofinanceRail
+from .rails.notification_hub import NotificationHubRail
+from .rails.passkeys import PasskeysRail
+from .rails.products import ProductsRail
+from .rails.programs import ProgramsRail
+from .rails.residency import ResidencyRail
+from .rails.retention import RetentionRail
+from .rails.secrets import SecretsRail
+from .rails.shariah_screening import ShariahScreeningRail
+from .rails.taxonomy import TaxonomyRail
 
 
 class IOFClient:
-    """
-    Main client for the Islamic Open Finance API.
+    """Islamic Open Finance Platform Client.
 
-    Provides access to all rail APIs through properties.
+    Provides access to all 142 IOF API rails through a single client instance.
+    One shared HTTP client is used for all rails.
+
+    Args:
+        api_key: Your API key
+        base_url: API base URL (default: https://api.islamicopenfinance.com)
+        timeout: Request timeout in seconds (default: 30)
 
     Example:
-        >>> client = IOFClient(
-        ...     base_url="https://api.example.com",
-        ...     api_key="your-api-key",
-        ...     tenant_id="tenant-123"
-        ... )
-        >>> contracts = client.contracts.list_contracts(status="ACTIVE")
-        >>> alert = client.aml.create_alert(...)
+        client = IOFClient(api_key='your-api-key')
+        accounts = client.accounts.list_accounts()
+        contracts = client.contracts.list_contracts()
+        murabaha = client.murabaha.list_contracts()
+        sukuk = client.sukuk.list_issuances()
     """
 
     def __init__(
         self,
-        base_url: str,
-        api_key: Optional[str] = None,
-        access_token: Optional[str] = None,
-        tenant_id: Optional[str] = None,
-        timeout: float = 30.0,
-        max_retries: int = 3,
+        api_key: str,
+        base_url: str = "https://api.islamicopenfinance.com",
+        timeout: int = 30,
     ) -> None:
-        """
-        Initialize the IOF client.
+        self.api_key = api_key
+        self.base_url = base_url
+        self.timeout = timeout
 
-        Args:
-            base_url: Base URL of the IOF API
-            api_key: API key for authentication
-            access_token: Bearer token for authentication
-            tenant_id: Tenant ID for multi-tenancy
-            timeout: Request timeout in seconds
-            max_retries: Maximum number of retry attempts
-        """
-        self.http = HttpClient(
-            base_url=base_url,
-            api_key=api_key,
-            access_token=access_token,
-            tenant_id=tenant_id,
-            timeout=timeout,
-            max_retries=max_retries,
-        )
+        # Shared HTTP client for all rails
+        self._http = BaseClient(api_key, base_url, timeout)
 
-        # Import rail clients lazily to avoid circular imports
-        from .rails.contracts import ContractsRail
-        from .rails.jurisdictions import JurisdictionsRail
-        from .rails.access_consent import AccessConsentRail
-        from .rails.kyc import KycRail
-        from .rails.aml import AmlRail
-        from .rails.consent import ConsentRail
-        from .rails.developer import DeveloperRail
-        from .rails.partners import PartnersRail
-        from .rails.cases import CasesRail
-        from .rails.disputes import DisputesRail
-        from .rails.zakat import ZakatRail
-        from .rails.reconciliation import ReconciliationRail
-        from .rails.routing import RoutingRail
-        from .rails.messages import MessagesRail
-        from .rails.clearing import ClearingRail
-        from .rails.treasury import TreasuryRail
-        from .rails.risk import RiskRail
-        from .rails.portfolio import PortfolioRail
-        from .rails.reporting import ReportingRail
-        from .rails.analytics import AnalyticsRail
-        from .rails.legal import LegalRail
-        from .rails.underwriting import UnderwritingRail
-        from .rails.compliance import ComplianceRail
-        from .rails.governance import GovernanceRail
-        from .rails.events import EventsRail
-        from .rails.notifications import NotificationsRail
-        from .rails.search import SearchRail
-        from .rails.webhooks import WebhooksRail
-        from .rails.observability import ObservabilityRail
+        # =====================================================================
+        # Agent Rail (Deterministic Agents)
+        # =====================================================================
+        self.agents = AgentRailClient(self._http)
 
-        # Initialize all rail clients
-        self._contracts = ContractsRail(self.http)
-        self._jurisdictions = JurisdictionsRail(self.http)
-        self._access_consent = AccessConsentRail(self.http)
-        self._kyc = KycRail(self.http)
-        self._aml = AmlRail(self.http)
-        self._consent = ConsentRail(self.http)
-        self._developer = DeveloperRail(self.http)
-        self._partners = PartnersRail(self.http)
-        self._cases = CasesRail(self.http)
-        self._disputes = DisputesRail(self.http)
-        self._zakat = ZakatRail(self.http)
-        self._reconciliation = ReconciliationRail(self.http)
-        self._routing = RoutingRail(self.http)
-        self._messages = MessagesRail(self.http)
-        self._clearing = ClearingRail(self.http)
-        self._treasury = TreasuryRail(self.http)
-        self._risk = RiskRail(self.http)
-        self._portfolio = PortfolioRail(self.http)
-        self._reporting = ReportingRail(self.http)
-        self._analytics = AnalyticsRail(self.http)
-        self._legal = LegalRail(self.http)
-        self._underwriting = UnderwritingRail(self.http)
-        self._compliance = ComplianceRail(self.http)
-        self._governance = GovernanceRail(self.http)
-        self._events = EventsRail(self.http)
-        self._notifications = NotificationsRail(self.http)
-        self._search = SearchRail(self.http)
-        self._webhooks = WebhooksRail(self.http)
-        self._observability = ObservabilityRail(self.http)
+        # =====================================================================
+        # Account & Core Services
+        # =====================================================================
+        self.accounts = AccountInformationRail(self._http)
+        self.contracts = ContractsRail(self._http)
+        self.contract_lifecycle = ContractLifecycleRail(self._http)
+        self.workspaces = WorkspacesRail(self._http)
+        self.zakat = ZakatRail(self._http)
+
+        # =====================================================================
+        # Islamic Contract Types (19 Shariah-compliant contract rails)
+        # =====================================================================
+        self.murabaha = MurabahaRail(self._http)
+        self.ijarah = IjarahRail(self._http)
+        self.musharakah = MusharakahRail(self._http)
+        self.diminishing_musharakah = DiminishingMusharakahRail(self._http)
+        self.mudarabah = MudarabahRail(self._http)
+        self.salam = SalamRail(self._http)
+        self.istisna = IstisnaRail(self._http)
+        self.wakalah = WakalahRail(self._http)
+        self.wadiah = WadiahRail(self._http)
+        self.qard = QardRail(self._http)
+        self.kafalah = KafalahRail(self._http)
+        self.rahnu = RahnuRail(self._http)
+        self.hawalah = HawalahRail(self._http)
+        self.tabarru = TabarruRail(self._http)
+        self.hibah = HibahRail(self._http)
+        self.ujrah = UjrahRail(self._http)
+        self.jualah = JualahRail(self._http)
+        self.ibraa = IbraaRail(self._http)
+        self.muqasah = MuqasahRail(self._http)
+
+        # =====================================================================
+        # Shariah Governance
+        # =====================================================================
+        self.shariah_governance = ShariahGovernanceRail(self._http)
+        self.shariah_rules = ShariahRulesRail(self._http)
+        self.shariah_compliance = ShariahComplianceRail(self._http)
+
+        # =====================================================================
+        # Capital Markets & Sukuk
+        # =====================================================================
+        self.sukuk = SukukRail(self._http)
+
+        # =====================================================================
+        # Islamic Funds
+        # =====================================================================
+        self.funds = FundsRail(self._http)
+
+        # =====================================================================
+        # Takaful (Islamic Insurance)
+        # =====================================================================
+        self.takaful = TakafulRail(self._http)
+
+        # =====================================================================
+        # Waqf & Social Finance
+        # =====================================================================
+        self.waqf = WaqfRail(self._http)
+        self.sadaqah = SadaqahRail(self._http)
+        self.qard_hasan = QardHasanRail(self._http)
+
+        # =====================================================================
+        # Trade Finance
+        # =====================================================================
+        self.trade_finance = TradeFinanceRail(self._http)
+
+        # =====================================================================
+        # Debt & Receivables
+        # =====================================================================
+        self.debt = DebtRail(self._http)
+
+        # =====================================================================
+        # Foreign Exchange
+        # =====================================================================
+        self.fx = FxRail(self._http)
+
+        # =====================================================================
+        # Compliance & Risk
+        # =====================================================================
+        self.compliance = ComplianceRail(self._http)
+        self.kyc = KycRail(self._http)
+        self.aml = AmlRail(self._http)
+        self.risk = RiskRail(self._http)
+
+        # =====================================================================
+        # Prudential & Basel III
+        # =====================================================================
+        self.prudential = PrudentialRail(self._http)
+
+        # =====================================================================
+        # Operations
+        # =====================================================================
+        self.clearing = ClearingRail(self._http)
+        self.reconciliation = ReconciliationRail(self._http)
+        self.cases = CasesRail(self._http)
+        self.disputes = DisputesRail(self._http)
+        self.routing = RoutingRail(self._http)
+        self.payments = PaymentsRail(self._http)
+
+        # =====================================================================
+        # Financial Services
+        # =====================================================================
+        self.treasury = TreasuryRail(self._http)
+        self.portfolio = PortfolioRail(self._http)
+        self.underwriting = UnderwritingRail(self._http)
+        self.liquidity = LiquidityRail(self._http)
+        self.profit_distribution = ProfitDistributionRail(self._http)
+
+        # =====================================================================
+        # Platform Services
+        # =====================================================================
+        self.analytics = AnalyticsRail(self._http)
+        self.reporting = ReportingRail(self._http)
+        self.search = SearchRail(self._http)
+        self.observability = ObservabilityRail(self._http)
+        self.dashboard = DashboardRail(self._http)
+        self.billing = BillingRail(self._http)
+        self.audit = AuditRail(self._http)
+        self.metadata = MetadataRail(self._http)
+        self.reference_data = ReferenceDataRail(self._http)
+
+        # =====================================================================
+        # Governance & Legal
+        # =====================================================================
+        self.governance = GovernanceRail(self._http)
+        self.legal = LegalRail(self._http)
+        self.jurisdictions = JurisdictionsRail(self._http)
+
+        # =====================================================================
+        # Developer & Integration
+        # =====================================================================
+        self.developer = DeveloperRail(self._http)
+        self.webhooks = WebhooksRail(self._http)
+        self.events = EventsRail(self._http)
+        self.notifications = NotificationsRail(self._http)
+        self.messages = MessagesRail(self._http)
+
+        # =====================================================================
+        # Access & Consent
+        # =====================================================================
+        self.access_consent = AccessConsentRail(self._http)
+        self.consent = ConsentRail(self._http)
+
+        # =====================================================================
+        # Partner Management
+        # =====================================================================
+        self.partners = PartnersRail(self._http)
+
+        # =====================================================================
+        # Omnichannel
+        # =====================================================================
+        self.omnichannel = OmnichannelRail(self._http)
+
+        # =====================================================================
+        # Additional Rails
+        # =====================================================================
+        self.alerting = AlertingRail(self._http)
+        self.api_keys = ApiKeysRail(self._http)
+        self.asset_finance = AssetFinanceRail(self._http)
+        self.audit_analytics = AuditAnalyticsRail(self._http)
+        self.byoc = BYOCRail(self._http)
+        self.evidence_pack = EvidencePackRail(self._http)
+        self.finops = FinOpsRail(self._http)
+        self.gdpr = GDPRRail(self._http)
+        self.invitations = InvitationsRail(self._http)
+        self.islamic_microfinance = IslamicMicrofinanceRail(self._http)
+        self.notification_hub = NotificationHubRail(self._http)
+        self.passkeys = PasskeysRail(self._http)
+        self.products = ProductsRail(self._http)
+        self.programs = ProgramsRail(self._http)
+        self.residency = ResidencyRail(self._http)
+        self.retention = RetentionRail(self._http)
+        self.secrets = SecretsRail(self._http)
+        self.shariah_screening = ShariahScreeningRail(self._http)
+        self.taxonomy = TaxonomyRail(self._http)
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        self._http.close()
 
     def __enter__(self) -> "IOFClient":
-        """Context manager entry."""
         return self
 
     def __exit__(self, *args: Any) -> None:
-        """Context manager exit."""
         self.close()
 
-    def close(self) -> None:
-        """Close the client."""
-        self.http.close()
-
-    # Rail properties
-
-    @property
-    def contracts(self):
-        """Access the Contracts rail."""
-        return self._contracts
-
-    @property
-    def jurisdictions(self):
-        """Access the Jurisdictions rail."""
-        return self._jurisdictions
-
-    @property
-    def access_consent(self):
-        """Access the Access Consent rail."""
-        return self._access_consent
-
-    @property
-    def kyc(self):
-        """Access the KYC rail."""
-        return self._kyc
-
-    @property
-    def aml(self):
-        """Access the AML rail."""
-        return self._aml
-
-    @property
-    def consent(self):
-        """Access the Consent & Privacy rail."""
-        return self._consent
-
-    @property
-    def developer(self):
-        """Access the Developer rail."""
-        return self._developer
-
-    @property
-    def partners(self):
-        """Access the Partners rail."""
-        return self._partners
-
-    @property
-    def cases(self):
-        """Access the Cases rail."""
-        return self._cases
-
-    @property
-    def disputes(self):
-        """Access the Disputes rail."""
-        return self._disputes
-
-    @property
-    def zakat(self):
-        """Access the Zakat rail."""
-        return self._zakat
-
-    @property
-    def reconciliation(self):
-        """Access the Reconciliation rail."""
-        return self._reconciliation
-
-    @property
-    def routing(self):
-        """Access the Routing rail."""
-        return self._routing
-
-    @property
-    def messages(self):
-        """Access the Messages rail."""
-        return self._messages
-
-    @property
-    def clearing(self):
-        """Access the Clearing rail."""
-        return self._clearing
-
-    @property
-    def treasury(self):
-        """Access the Treasury rail."""
-        return self._treasury
-
-    @property
-    def risk(self):
-        """Access the Risk rail."""
-        return self._risk
-
-    @property
-    def portfolio(self):
-        """Access the Portfolio rail."""
-        return self._portfolio
-
-    @property
-    def reporting(self):
-        """Access the Reporting rail."""
-        return self._reporting
-
-    @property
-    def analytics(self):
-        """Access the Analytics rail."""
-        return self._analytics
-
-    @property
-    def legal(self):
-        """Access the Legal rail."""
-        return self._legal
-
-    @property
-    def underwriting(self):
-        """Access the Underwriting rail."""
-        return self._underwriting
-
-    @property
-    def compliance(self):
-        """Access the Compliance rail."""
-        return self._compliance
-
-    @property
-    def governance(self):
-        """Access the Governance rail."""
-        return self._governance
-
-    @property
-    def events(self):
-        """Access the Events rail."""
-        return self._events
-
-    @property
-    def notifications(self):
-        """Access the Notifications rail."""
-        return self._notifications
-
-    @property
-    def search(self):
-        """Access the Search rail."""
-        return self._search
-
-    @property
-    def webhooks(self):
-        """Access the Webhooks rail."""
-        return self._webhooks
-
-    @property
-    def observability(self):
-        """Access the Observability rail."""
-        return self._observability
+    def __repr__(self) -> str:
+        return f"IOFClient(base_url={self.base_url})"
