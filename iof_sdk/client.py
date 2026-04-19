@@ -92,6 +92,7 @@ from .rails.api_keys import ApiKeysRail
 from .rails.asset_finance import AssetFinanceRail
 from .rails.audit_analytics import AuditAnalyticsRail
 from .rails.byoc import BYOCRail
+from .rails.evidence import EvidenceRail
 from .rails.evidence_pack import EvidencePackRail
 from .rails.finops import FinOpsRail
 from .rails.gdpr import GDPRRail
@@ -104,6 +105,7 @@ from .rails.programs import ProgramsRail
 from .rails.residency import ResidencyRail
 from .rails.retention import RetentionRail
 from .rails.secrets import SecretsRail
+from .rails.settlement import SettlementRail
 from .rails.shariah_screening import ShariahScreeningRail
 from .rails.taxonomy import TaxonomyRail
 
@@ -320,6 +322,14 @@ class IOFClient:
         self.secrets = SecretsRail(self._http)
         self.shariah_screening = ShariahScreeningRail(self._http)
         self.taxonomy = TaxonomyRail(self._http)
+
+        # =====================================================================
+        # Moat Namespaces — first-class engines aligned with the README
+        # narrative. Settlement Engine reclaims 60-140 bps per corridor;
+        # Evidence Engine reclaims 30-55 bps on audit + re-papering cycles.
+        # =====================================================================
+        self.settlement = SettlementRail(self._http)
+        self.evidence = EvidenceRail(self._http)
 
     def close(self) -> None:
         """Close the underlying HTTP client."""
