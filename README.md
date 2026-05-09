@@ -47,7 +47,7 @@ zakat = client.accounts.calculate_zakat(
 
 ## Features
 
-- **105 Islamic Finance Rails** - Complete API coverage
+- **109 Shariah-Native Rails** - Complete API coverage
 - **Type Hints** - Full typing support for IDE autocomplete
 - **Async Support** - Coming soon
 - **Comprehensive Documentation** - Detailed guides and examples
